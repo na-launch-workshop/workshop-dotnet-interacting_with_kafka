@@ -238,6 +238,13 @@
     .bar-fill { height:3px; background:linear-gradient(90deg,var(--accent),var(--live)); border-radius:2px; transition:width .5s ease; }
     .app-kwh { font-size:.58rem; color:var(--muted); font-family:var(--mono); }
     .panel-empty { padding:1.25rem .875rem; text-align:center; color:var(--muted); font-size:.7rem; line-height:1.5; font-family:var(--mono); }
+    /* Easter egg */
+    .egg { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(6,8,16,.85); z-index:100; cursor:pointer; }
+    .egg.on { display:flex; }
+    .egg-card { text-align:center; padding:2rem 3rem; border:1px solid var(--accent); border-radius:12px; background:var(--s1); box-shadow:0 0 40px rgba(0,163,224,.35); font-family:var(--mono); }
+    .egg-card .big { font-size:3.5rem; }
+    .egg-card h2 { margin:.5rem 0; color:#fff; letter-spacing:.1em; }
+    .egg-card p { color:var(--muted); font-size:.8rem; }
   </style>
 </head>
 <body>
@@ -245,7 +252,7 @@
   <!-- Header -->
   <header>
     <div class="rh-logo">
-      <img src="/static/dominion-logo.png" alt="Dominion" style="height:44px;width:auto;object-fit:contain;" />
+      <img src="/static/rhlogo.svg" alt="Red Hat Demos" style="height:44px;width:auto;object-fit:contain;" />
     </div>
     <div class="hdivider"></div>
     <div class="app-title">
@@ -381,6 +388,14 @@
     </div>
   </div>
 
+<div class="egg" id="egg" onclick="this.classList.remove('on')">
+  <div class="egg-card">
+    <div class="big">⚡🏆⚡</div>
+    <h2>1.21 GIGAWATTS!</h2>
+    <p>Great Scott — you sent power straight through the grid.<br>Go tell the workshop facilitator. 🐣</p>
+  </div>
+</div>
+
 <script>
   const ZONES = ["Kitchen","Bathroom","Living Room","Bedroom","Garage"];
   const TYPE_CFG = {
@@ -396,6 +411,7 @@
   let curPrice=null, appData=[];
   const zoneCounts = {}; ZONES.forEach(z => zoneCounts[z]=0);
   const typeCounts = { kitchen:0, hvac:0, entertainment:0 };
+  let eggShown = false;
 
   // Sparkline
   const N=30, BKT=2000;
@@ -588,13 +604,16 @@
       for(const e of data){
         const k=`${e.circuit_id}-${e.timestamp}`;
         if(seen.has(k))continue;
-        seen.add(k); total++; added=true;
+        seen.add(k);
+        if(e.type==='flux-capacitor'&&e.kwh===1.21&&!eggShown){ eggShown=true; document.getElementById('egg').classList.add('on'); }
+        if(typeof e.kwh!=='number')continue;  // hand-typed messages: skip anything without a numeric kwh
+        total++; added=true;
         evTs.push(Date.now());
         buckets[bIdx()]++;
         totKwh+=e.kwh;
         if(e.kwh>peakKwh)peakKwh=e.kwh;
         zoneCounts[e.room]=(zoneCounts[e.room]||0)+1;
-        typeCounts[e.type]=(typeCounts[e.type]||0)+1;
+        if(TYPE_CFG[e.type])typeCounts[e.type]++;
         updateScope(e.kwh);
         const cost=curPrice?e.kwh*curPrice:null;
         if(cost)totCost+=cost;

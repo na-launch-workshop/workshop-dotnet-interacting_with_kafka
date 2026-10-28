@@ -1,7 +1,6 @@
 # Not built or used in this workshop. The price-api sidecar runs the shared
-# workspace-images/electricity-price-api image, which is built from the Python version
-# of this lab (sidecar/ in workshop-python-interacting_with_kafka) by the
-# cluster/workspace-images chart in ocp-dev-days-rdshw-gitops.
+# workspace-images/electricity-price-api image, which the cluster builds from the Python
+# source in cluster/workspace-images/electricity-price-api/ in ocp-dev-days-rdshw-gitops.
 #
 # This Dockerfile packages the equivalent C# implementation the same way, as a reference.
 # Both serve the same JSON on GET :5000/price, so either image works with the dashboard.

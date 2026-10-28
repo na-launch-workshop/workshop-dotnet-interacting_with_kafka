@@ -67,10 +67,28 @@ components:
           value: "false"
       cpuLimit: '1'
       memoryLimit: '1Gi'
+  - name: kafka-ui
+    container:
+      image: ghcr.io/kafbat/kafka-ui:v1.5.0
+      endpoints:
+        - name: kafka-ui
+          exposure: public
+          protocol: https
+          targetPort: 8081
+          path: /
+      env:
+        - name: SERVER_PORT
+          value: "8081"
+        - name: KAFKA_CLUSTERS_0_NAME
+          value: homegrid
+        - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+          value: localhost:9092
+      cpuLimit: '500m'
+      memoryLimit: '1Gi'
 
   - name: datasette
     container:
-      image: datasetteproject/datasette
+      image: datasetteproject/datasette:0.65.5
       endpoints:
         - name: datasette
           exposure: internal
