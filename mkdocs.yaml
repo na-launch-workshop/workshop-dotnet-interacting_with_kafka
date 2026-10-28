@@ -1,0 +1,8 @@
+site_name: Event Streaming with Apache Kafka - .NET
+site_description: Wire up Apache Kafka and sidecars in Dev Spaces and watch a live home energy dashboard fill in real time
+
+nav:
+  - Overview: index.md
+
+plugins:
+  - techdocs-core

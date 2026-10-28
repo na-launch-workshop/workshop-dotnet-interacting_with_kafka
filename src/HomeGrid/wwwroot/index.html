@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HomeGrid — Energy Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #060810;
+      --s1:      #0b1120;
+      --s2:      #0f1929;
+      --border:  #162040;
+      --accent:  #00a3e0;
+      --live:    #00e676;
+      --peak:    #ff4d1c;
+      --mid:     #f7931e;
+      --rh:      #ee0000;
+      --text:    #c8ddf0;
+      --muted:   #7aaac8;
+      --mono:    'Share Tech Mono', 'Courier New', monospace;
+    }
+
+    body {
+      font-family: 'Red Hat Display', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 0.875rem 1.5rem;
+    }
+
+    /* scan line */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -2px; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(0,163,224,.5), transparent);
+      animation: scan 12s linear infinite;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    @keyframes scan { 0% { top:-2px; } 100% { top:100vh; } }
+
+    /* ── Header ────────── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.875rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .rh-logo { display:flex; align-items:center; gap:.45rem; flex-shrink:0; }
+    .rh-logo svg { width:44px; height:44px; }
+    .rh-word { font-size:.9rem; font-weight:800; color:var(--rh); letter-spacing:.06em; }
+    .hdivider { width:1px; height:28px; background:var(--border); }
+    .app-title { flex:1; }
+    .app-title h1 {
+      font-size:1.2rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+      background:linear-gradient(120deg,#fff 20%,#4a8ab0);
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+    }
+    .app-sub { font-size:.58rem; color:var(--muted); letter-spacing:.15em; text-transform:uppercase; font-family:var(--mono); }
+    .header-right { display:flex; align-items:center; gap:.75rem; }
+
+    /* badges */
+    .badges { display:flex; gap:.35rem; }
+    .cbadge {
+      font-size:.55rem; font-weight:700; padding:.15rem .4rem; border-radius:3px;
+      letter-spacing:.08em; border:1px solid; font-family:var(--mono);
+      opacity:.25; transition:opacity .4s,box-shadow .4s;
+    }
+    .cbadge.on { opacity:1; }
+    .cbadge.kafka  { color:var(--rh);  border-color:var(--rh);  }
+    .cbadge.kafka.on  { box-shadow:0 0 8px rgba(238,0,0,.4); }
+    .cbadge.sqlite { color:#0ea5a0;    border-color:#0ea5a0; }
+    .cbadge.sqlite.on { box-shadow:0 0 8px rgba(14,165,160,.4); }
+    .cbadge.price  { color:#8b5cf6;    border-color:#8b5cf6; }
+    .cbadge.price.on  { box-shadow:0 0 8px rgba(139,92,246,.4); }
+
+    /* price ticker */
+    .ticker {
+      display:flex; align-items:center; gap:.6rem;
+      background:var(--s1); border:1px solid var(--border); border-radius:8px;
+      padding:.4rem .875rem; min-width:180px;
+    }
+    .tier-pill {
+      font-size:.55rem; font-weight:800; padding:.18rem .45rem; border-radius:3px;
+      text-transform:uppercase; letter-spacing:.1em; color:#fff; font-family:var(--mono);
+    }
+    .tier-pill.peak     { background:var(--peak);  box-shadow:0 0 10px rgba(255,77,28,.5); }
+    .tier-pill.mid-peak { background:var(--mid);   box-shadow:0 0 10px rgba(247,147,30,.4); }
+    .tier-pill.off-peak { background:var(--accent);box-shadow:0 0 10px rgba(0,163,224,.4); }
+    .price-num { font-size:1.5rem; font-weight:800; color:var(--accent); font-family:var(--mono); text-shadow:0 0 16px rgba(0,163,224,.6); }
+    .price-u   { font-size:.6rem; color:var(--muted); line-height:1.3; }
+    .no-price  { font-size:.7rem; color:var(--muted); font-family:var(--mono); }
+
+    /* status */
+    .spill {
+      display:flex; align-items:center; gap:.4rem;
+      background:var(--s1); border:1px solid var(--border); border-radius:6px;
+      padding:.3rem .65rem; font-size:.68rem; color:var(--muted); font-family:var(--mono);
+    }
+    .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+    .dot.live { background:var(--live); animation:glo 1.8s ease-in-out infinite; }
+    @keyframes glo {
+      0%,100% { box-shadow:0 0 0 0 rgba(0,230,118,.6); }
+      50%      { box-shadow:0 0 0 6px rgba(0,230,118,0); }
+    }
+
+    /* ── Instrument row ── */
+    .instr-row {
+      display:grid;
+      grid-template-columns: 190px 1fr 240px;
+      gap:.875rem;
+      margin-bottom:.875rem;
+    }
+
+    /* Big arc gauge */
+    .gauge-card {
+      background:var(--s1); border:1px solid var(--border); border-radius:10px;
+      display:flex; flex-direction:column; align-items:center; padding:.875rem .5rem .5rem;
+    }
+    .gauge-lbl { font-size:.72rem; color:var(--text); text-transform:uppercase; letter-spacing:.12em; margin-bottom:.4rem; font-family:var(--mono); }
+    .gauge-svg { width:160px; height:100px; }
+    .gauge-num { font-size:2rem; font-weight:800; color:var(--accent); font-family:var(--mono); text-shadow:0 0 20px rgba(0,163,224,.5); margin-top:-.2rem; }
+    .gauge-unit-lbl { font-size:.6rem; color:var(--muted); font-family:var(--mono); }
+
+    /* Oscilloscope */
+    .scope-card {
+      background:var(--s1); border:1px solid var(--border); border-radius:10px;
+      padding:.6rem;
+      display:flex; flex-direction:column;
+    }
+    .scope-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:.4rem; }
+    .scope-lbl { font-size:.72rem; color:var(--text); text-transform:uppercase; letter-spacing:.12em; font-family:var(--mono); }
+    .scope-val { font-size:.75rem; font-family:var(--mono); color:var(--live); }
+    .scope-svg { flex:1; min-height:80px; }
+    .scope-grid line { stroke:rgba(22,32,64,.8); }
+
+    /* Type gauges */
+    .type-gauges {
+      background:var(--s1); border:1px solid var(--border); border-radius:10px;
+      padding:.6rem; display:flex; flex-direction:column; gap:.4rem;
+    }
+    .type-gauges .tg-lbl { font-size:.72rem; color:var(--text); text-transform:uppercase; letter-spacing:.12em; font-family:var(--mono); }
+    .tg-row { display:flex; flex-direction:column; gap:.3rem; }
+    .tg-item { display:flex; align-items:center; gap:.5rem; }
+    .tg-svg { flex-shrink:0; }
+    .tg-info { flex:1; }
+    .tg-name { font-size:.7rem; text-transform:capitalize; }
+    .tg-count { font-size:1rem; font-weight:800; font-family:var(--mono); }
+    .tg-pct { font-size:.6rem; color:var(--muted); font-family:var(--mono); }
+
+    /* ── Stats ── */
+    .stats {
+      display:grid; grid-template-columns:repeat(5,1fr); gap:.75rem; margin-bottom:.875rem;
+    }
+    .sc {
+      background:var(--s1); border:1px solid var(--border); border-radius:8px;
+      padding:.7rem .875rem; position:relative; overflow:hidden;
+    }
+    .sc::after { content:''; position:absolute; inset:0 0 auto 0; height:2px; background:linear-gradient(90deg,var(--accent),transparent); }
+    .sc .lbl { font-size:.58rem; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:.35rem; font-family:var(--mono); }
+    .sc .val { font-size:1.7rem; font-weight:800; color:var(--accent); font-family:var(--mono); text-shadow:0 0 12px rgba(0,163,224,.3); transition:transform .15s; }
+    .sc .val.sm { font-size:1rem; margin-top:.25rem; color:var(--text); }
+    .sc .val.bump { transform:scale(1.15); }
+
+    /* ── Zone strip ── */
+    .zone-strip { margin-bottom:.875rem; }
+    .zone-lbl { font-size:.72rem; color:var(--text); text-transform:uppercase; letter-spacing:.12em; margin-bottom:.3rem; font-family:var(--mono); }
+    .zones { display:grid; grid-template-columns:repeat(5,1fr); gap:.4rem; }
+    .zc {
+      background:var(--s1); border:1px solid var(--border); border-radius:6px;
+      padding:.3rem .4rem; display:flex; flex-direction:column; align-items:center; gap:.15rem;
+      transition:background .5s,border-color .5s,box-shadow .5s;
+    }
+    .zc svg { width:32px; height:20px; }
+    .zc .zname { font-size:.5rem; color:var(--muted); font-family:var(--mono); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; }
+    .zc .zcount { font-size:.85rem; font-weight:700; font-family:var(--mono); color:var(--accent); }
+    .zc.h1 { border-color:rgba(0,163,224,.4); }
+    .zc.h2 { border-color:rgba(247,147,30,.5); background:rgba(247,147,30,.05); box-shadow:0 0 8px rgba(247,147,30,.15); }
+    .zc.h3 { border-color:rgba(255,77,28,.6); background:rgba(255,77,28,.07); box-shadow:0 0 12px rgba(255,77,28,.25); }
+
+    /* ── Sparkline ── */
+    .spark-wrap { margin-bottom:.875rem; }
+    .spark-lbl { font-size:.72rem; color:var(--text); text-transform:uppercase; letter-spacing:.12em; margin-bottom:.3rem; font-family:var(--mono); }
+    .sparkline {
+      display:flex; align-items:flex-end; gap:3px; height:36px;
+      background:var(--s1); border:1px solid var(--border); border-radius:6px; padding:5px 8px;
+    }
+    .sb { flex:1; background:linear-gradient(to top,var(--accent),rgba(0,163,224,.2)); border-radius:2px 2px 0 0; min-height:2px; opacity:.5; transition:height .3s; }
+    .sb.cur { opacity:1; }
+
+    /* ── Main ── */
+    .main { display:grid; grid-template-columns:1fr 270px; gap:.875rem; align-items:start; }
+
+    .table-wrap { background:var(--s1); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+    .th-bar {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:.45rem .875rem; background:#080f1c; border-bottom:1px solid var(--border);
+    }
+    .th-label { font-size:.72rem; color:var(--text); text-transform:uppercase; letter-spacing:.12em; font-family:var(--mono); }
+    table { width:100%; border-collapse:collapse; }
+    th { text-align:left; padding:.4rem .875rem; font-size:.58rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); font-family:var(--mono); }
+    td { padding:.4rem .875rem; border-bottom:1px solid rgba(22,32,64,.5); font-size:.8rem; }
+    tr:last-child td { border-bottom:none; }
+    tr.nr { animation:sli .3s ease-out; }
+    @keyframes sli { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:translateX(0)} }
+    .mid-id { font-family:var(--mono); font-size:.72rem; color:var(--muted); }
+    .chip { font-size:.56rem; font-weight:700; padding:.1rem .32rem; border-radius:3px; text-transform:uppercase; letter-spacing:.07em; font-family:var(--mono); border:1px solid; }
+    .chip.kitchen       { color:var(--accent); border-color:rgba(0,163,224,.3); background:rgba(0,163,224,.07); }
+    .chip.hvac          { color:var(--mid);    border-color:rgba(247,147,30,.3); background:rgba(247,147,30,.07); }
+    .chip.entertainment { color:#8b5cf6;        border-color:rgba(139,92,246,.3); background:rgba(139,92,246,.07); }
+    .kval { font-family:var(--mono); font-weight:700; }
+    .cval { font-family:var(--mono); color:var(--live); font-size:.74rem; }
+    .tval { font-family:var(--mono); color:var(--muted); font-size:.68rem; }
+    .equiv { font-family:var(--mono); font-size:.64rem; color:#8b5cf6; white-space:nowrap; }
+    .empty { text-align:center; padding:2.5rem 0; color:var(--muted); }
+    .empty p { font-size:.88rem; margin-bottom:.25rem; }
+    .empty small { font-size:.68rem; opacity:.5; font-family:var(--mono); }
+
+    /* ── Side panel ── */
+    .side-panel { display:flex; flex-direction:column; gap:.875rem; }
+    .panel { background:var(--s1); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+    .panel-hdr { background:#080f1c; padding:.45rem .875rem; border-bottom:1px solid var(--border); font-size:.72rem; text-transform:uppercase; letter-spacing:.12em; color:var(--text); font-family:var(--mono); }
+    .app-list { padding:.35rem; }
+    .app-row { padding:.35rem .45rem; border-bottom:1px solid rgba(22,32,64,.4); }
+    .app-row:last-child { border-bottom:none; }
+    .app-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:.2rem; }
+    .app-name { font-size:.76rem; }
+    .app-cost { font-family:var(--mono); color:var(--live); font-size:.76rem; font-weight:700; }
+    .bar-wrap { height:3px; background:var(--border); border-radius:2px; margin-bottom:.15rem; }
+    .bar-fill { height:3px; background:linear-gradient(90deg,var(--accent),var(--live)); border-radius:2px; transition:width .5s ease; }
+    .app-kwh { font-size:.58rem; color:var(--muted); font-family:var(--mono); }
+    .panel-empty { padding:1.25rem .875rem; text-align:center; color:var(--muted); font-size:.7rem; line-height:1.5; font-family:var(--mono); }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="rh-logo">
+      <img src="/static/dominion-logo.png" alt="Dominion" style="height:44px;width:auto;object-fit:contain;" />
+    </div>
+    <div class="hdivider"></div>
+    <div class="app-title">
+      <h1>HomeGrid</h1>
+      <div class="app-sub">Home Energy Monitor — Real-time Power Consumption</div>
+    </div>
+    <div class="header-right">
+      <div class="badges">
+        <div class="cbadge kafka"  id="bk">AMQ</div>
+        <div class="cbadge sqlite" id="bs">SQLite</div>
+        <div class="cbadge price"  id="bp">PRICING</div>
+      </div>
+      <div class="ticker" id="ticker"><span class="no-price">Add price sidecar</span></div>
+      <div class="spill"><div class="dot" id="dot"></div><span id="stxt">OFFLINE</span></div>
+    </div>
+  </header>
+
+  <!-- Instrument row -->
+  <div class="instr-row">
+
+    <!-- Arc gauge -->
+    <div class="gauge-card">
+      <div class="gauge-lbl">Avg kWh / Reading</div>
+      <svg class="gauge-svg" viewBox="0 0 160 100">
+        <!-- tick marks -->
+        <g stroke="rgba(22,32,64,.9)" stroke-width="1.5">
+          <line x1="15" y1="80" x2="20" y2="80"/>
+          <line x1="24" y1="51" x2="28.5" y2="54.5"/>
+          <line x1="47" y1="28" x2="50.5" y2="32.5"/>
+          <line x1="80" y1="20" x2="80" y2="25"/>
+          <line x1="113" y1="28" x2="109.5" y2="32.5"/>
+          <line x1="136" y1="51" x2="131.5" y2="54.5"/>
+          <line x1="145" y1="80" x2="140" y2="80"/>
+        </g>
+        <!-- labels -->
+        <text x="10"  y="94" fill="#3a546e" font-size="8" font-family="monospace" text-anchor="middle">0</text>
+        <text x="150" y="94" fill="#3a546e" font-size="8" font-family="monospace" text-anchor="middle">50</text>
+        <text x="80"  y="15" fill="#3a546e" font-size="8" font-family="monospace" text-anchor="middle">25</text>
+        <!-- track -->
+        <path d="M15 80 A65 65 0 0 1 145 80" stroke="#162040" stroke-width="12" fill="none" stroke-linecap="round"/>
+        <!-- fill -->
+        <path id="garc" d="M15 80 A65 65 0 0 1 145 80"
+          stroke="#00a3e0" stroke-width="12" fill="none" stroke-linecap="round"
+          stroke-dasharray="204" stroke-dashoffset="204"
+          style="filter:drop-shadow(0 0 8px #00a3e0);transition:stroke-dashoffset .8s ease,stroke .8s"/>
+        <!-- needle pivot -->
+        <circle cx="80" cy="80" r="5" fill="#0b1120" stroke="#162040" stroke-width="1.5"/>
+        <line id="needle" x1="80" y1="80" x2="15" y2="80" stroke="#00a3e0" stroke-width="2" stroke-linecap="round"
+          style="transform-origin:80px 80px;transform:rotate(0deg);transition:transform .8s ease;filter:drop-shadow(0 0 4px #00a3e0)"/>
+      </svg>
+      <div class="gauge-num" id="gnum">0.00</div>
+      <div class="gauge-unit-lbl">kWh per reading</div>
+    </div>
+
+    <!-- Oscilloscope -->
+    <div class="scope-card">
+      <div class="scope-header">
+        <div class="scope-lbl">Live kWh Waveform</div>
+        <div class="scope-val" id="scope-last">—</div>
+      </div>
+      <svg class="scope-svg" id="scope" viewBox="0 0 400 90" preserveAspectRatio="none">
+        <!-- grid -->
+        <line x1="0" y1="22" x2="400" y2="22" stroke="rgba(22,32,64,.6)" stroke-width=".5"/>
+        <line x1="0" y1="45" x2="400" y2="45" stroke="rgba(22,32,64,.9)" stroke-width=".5"/>
+        <line x1="0" y1="68" x2="400" y2="68" stroke="rgba(22,32,64,.6)" stroke-width=".5"/>
+        <line x1="100" y1="0" x2="100" y2="90" stroke="rgba(22,32,64,.5)" stroke-width=".5"/>
+        <line x1="200" y1="0" x2="200" y2="90" stroke="rgba(22,32,64,.5)" stroke-width=".5"/>
+        <line x1="300" y1="0" x2="300" y2="90" stroke="rgba(22,32,64,.5)" stroke-width=".5"/>
+        <!-- waveform -->
+        <defs>
+          <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#00a3e0" stop-opacity=".15"/>
+            <stop offset="100%" stop-color="#00a3e0" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path id="wave-fill" d="" fill="url(#wg)"/>
+        <path id="wave" d="" fill="none" stroke="#00a3e0" stroke-width="1.5"
+          style="filter:drop-shadow(0 0 3px #00a3e0)"/>
+        <circle id="wave-dot" cx="0" cy="45" r="3" fill="#00e676"
+          style="filter:drop-shadow(0 0 4px #00e676);display:none"/>
+      </svg>
+    </div>
+
+    <!-- Type gauges -->
+    <div class="type-gauges">
+      <div class="tg-lbl">Reading Type Split</div>
+      <div class="tg-row" id="type-gauges"></div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="sc"><div class="lbl">Total Readings</div><div class="val" id="cnt">0</div></div>
+    <div class="sc"><div class="lbl">Readings / min</div><div class="val" id="rpm">—</div></div>
+    <div class="sc"><div class="lbl">Total kWh</div><div class="val" id="tkwh">—</div></div>
+    <div class="sc"><div class="lbl">Peak Circuit kWh</div><div class="val" id="pkwh">—</div></div>
+    <div class="sc"><div class="lbl">Est. Cost Today</div><div class="val sm" id="ecost">—</div></div>
+  </div>
+
+  <!-- Zone strip -->
+  <div class="zone-strip">
+    <div class="zone-lbl">Room Activity</div>
+    <div class="zones" id="zones"></div>
+  </div>
+
+  <!-- Sparkline -->
+  <div class="spark-wrap">
+    <div class="spark-lbl">Activity density — last 60 s</div>
+    <div class="sparkline" id="spk"></div>
+  </div>
+
+  <!-- Main layout -->
+  <div class="main">
+    <div class="table-wrap">
+      <div class="th-bar">
+        <span class="th-label">Live Circuit Readings</span>
+        <span class="th-label" id="tcount">—</span>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Circuit</th><th>Room</th><th>Type</th><th>kWh</th><th>Cost</th><th>Equivalent</th><th>Time</th>
+        </tr></thead>
+        <tbody id="tbody">
+          <tr><td colspan="7" class="empty"><p>Awaiting meter readings…</p><small>Complete lab tasks to start the stream.</small></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="side-panel">
+      <div class="panel">
+        <div class="panel-hdr">Appliance Reference</div>
+        <div id="app-list"><div class="panel-empty">Add datasette sidecar + seed the database.</div></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const ZONES = ["Kitchen","Bathroom","Living Room","Bedroom","Garage"];
+  const TYPE_CFG = {
+    kitchen:       { color:'#00a3e0', label:'Kitchen' },
+    hvac:          { color:'#f7931e', label:'HVAC' },
+    entertainment: { color:'#8b5cf6', label:'Entertainment' },
+  };
+
+  // State
+  const seen = new Set();
+  const evTs = [];
+  let total=0, totKwh=0, totCost=0, peakKwh=0;
+  let curPrice=null, appData=[];
+  const zoneCounts = {}; ZONES.forEach(z => zoneCounts[z]=0);
+  const typeCounts = { kitchen:0, hvac:0, entertainment:0 };
+
+  // Sparkline
+  const N=30, BKT=2000;
+  const buckets = new Array(N).fill(0);
+  const t0=Date.now();
+  function bIdx() { return Math.floor((Date.now()-t0)/BKT)%N; }
+  let lastB=bIdx();
+  setInterval(()=>{
+    const cur=bIdx();
+    if(cur!==lastB){buckets[cur]=0;lastB=cur;}
+    const mx=Math.max(...buckets,1);
+    document.getElementById('spk').innerHTML=buckets.map((v,i)=>
+      `<div class="sb${i===cur?' cur':''}" style="height:${Math.max(Math.round(v/mx*100),3)}%"></div>`
+    ).join('');
+  },400);
+
+  // Arc gauge (204 = arc length for 270°)
+  const ARC=204, KMID=25, KMAX=50;
+  function updateGauge(avg){
+    const r=Math.min(avg/KMAX,1);
+    const col=r<.4?'#00a3e0':r<.75?'#f7931e':'#ff4d1c';
+    const arc=document.getElementById('garc');
+    arc.style.strokeDashoffset=ARC*(1-r);
+    arc.style.stroke=col;
+    arc.style.filter=`drop-shadow(0 0 8px ${col})`;
+    // needle: 0→-135deg, KMAX→+135deg
+    const angle=-135+(r*270);
+    document.getElementById('needle').style.transform=`rotate(${angle}deg)`;
+    document.getElementById('needle').style.stroke=col;
+    document.getElementById('needle').style.filter=`drop-shadow(0 0 4px ${col})`;
+    document.getElementById('gnum').textContent=avg.toFixed(2);
+    document.getElementById('gnum').style.color=col;
+    document.getElementById('gnum').style.textShadow=`0 0 20px ${col}`;
+  }
+
+  // Oscilloscope
+  const SCOPE_PTS=80;
+  const scopePts=[];
+  function updateScope(kwh){
+    scopePts.push(kwh);
+    if(scopePts.length>SCOPE_PTS) scopePts.shift();
+    if(scopePts.length<2) return;
+    const mx=Math.max(...scopePts,1);
+    const mn=0;
+    const W=400, H=90, PAD=5;
+    const pts=scopePts.map((v,i)=>{
+      const x=(i/(SCOPE_PTS-1))*W;
+      const y=H-PAD-((v-mn)/(mx-mn))*(H-2*PAD);
+      return `${x},${y}`;
+    });
+    const d='M'+pts.join(' L');
+    const last=pts[pts.length-1].split(',');
+    // fill
+    const fillD=d+` L${last[0]},${H} L0,${H} Z`;
+    document.getElementById('wave').setAttribute('d',d);
+    document.getElementById('wave-fill').setAttribute('d',fillD);
+    const dot=document.getElementById('wave-dot');
+    dot.style.display='';
+    dot.setAttribute('cx',last[0]);
+    dot.setAttribute('cy',last[1]);
+    document.getElementById('scope-last').textContent=kwh.toFixed(2)+' kWh';
+  }
+
+  // Type gauges
+  function renderTypeGauges(){
+    const total=Object.values(typeCounts).reduce((a,b)=>a+b,0)||1;
+    const rows=Object.entries(typeCounts).map(([type,cnt])=>{
+      const {color,label}=TYPE_CFG[type];
+      const pct=Math.round(cnt/total*100);
+      const R=16,C=2*Math.PI*R,arc=C*(pct/100);
+      return `<div class="tg-item">
+        <svg class="tg-svg" viewBox="0 0 40 40" width="40" height="40">
+          <circle cx="20" cy="20" r="${R}" stroke="#162040" stroke-width="5" fill="none"/>
+          <circle cx="20" cy="20" r="${R}" stroke="${color}" stroke-width="5" fill="none"
+            stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct/100)}"
+            stroke-linecap="round"
+            transform="rotate(-90 20 20)"
+            style="filter:drop-shadow(0 0 4px ${color});transition:stroke-dashoffset .6s"/>
+        </svg>
+        <div class="tg-info">
+          <div class="tg-name" style="color:${color}">${label}</div>
+          <div class="tg-count" style="color:${color}">${cnt}</div>
+          <div class="tg-pct">${pct}%</div>
+        </div>
+      </div>`;
+    }).join('');
+    document.getElementById('type-gauges').innerHTML=rows;
+  }
+  renderTypeGauges();
+
+  // Zone render
+  function renderZones(){
+    const mx=Math.max(...Object.values(zoneCounts),1);
+    document.getElementById('zones').innerHTML=ZONES.map(z=>{
+      const c=zoneCounts[z]||0, r=c/mx;
+      const cls=r>.7?'h3':r>.35?'h2':c>0?'h1':'';
+      const col=r>.7?'#ff4d1c':r>.35?'#f7931e':c>0?'#00a3e0':'#162040';
+      const arcLen=50.3, off=arcLen*(1-r);
+      return `<div class="zc ${cls}">
+        <svg viewBox="0 0 32 20">
+          <path d="M4 16 A12 12 0 0 1 28 16" stroke="#162040" stroke-width="4" fill="none" stroke-linecap="round"/>
+          <path d="M4 16 A12 12 0 0 1 28 16" stroke="${col}" stroke-width="4" fill="none" stroke-linecap="round"
+            stroke-dasharray="${arcLen}" stroke-dashoffset="${off}"
+            style="filter:drop-shadow(0 0 3px ${col});transition:stroke-dashoffset .6s"/>
+        </svg>
+        <div class="zname">${z}</div>
+        <div class="zcount">${c}</div>
+      </div>`;
+    }).join('');
+  }
+  renderZones();
+
+  // Appliance equivalence — find closest appliance and show days it could power
+  function findEquiv(kwh){
+    if(!appData.length) return '—';
+    const best = appData.reduce((a,b) =>
+      Math.abs(a.daily_kwh - kwh) < Math.abs(b.daily_kwh - kwh) ? a : b
+    );
+    const days = kwh / best.daily_kwh;
+    const label = days >= 1
+      ? `${days.toFixed(1)}d ${best.name.split(' ')[0]}`
+      : `${(days * 24).toFixed(1)}h ${best.name.split(' ')[0]}`;
+    return label;
+  }
+
+  function bump(id){
+    const el=document.getElementById(id);
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+    setTimeout(()=>el.classList.remove('bump'),200);
+  }
+
+  // Price
+  async function pollPrice(){
+    try{
+      const res=await fetch('/api/price',{cache:'no-store'});
+      if(!res.ok)return;
+      const d=await res.json(); if(!d)return;
+      curPrice=d.price;
+      document.getElementById('bp').classList.add('on');
+      const cls=d.tier.toLowerCase().replace(' ','-');
+      document.getElementById('ticker').innerHTML=`
+        <div class="tier-pill ${cls}">${d.tier}</div>
+        <span class="price-num">$${d.price.toFixed(4)}</span>
+        <span class="price-u">per<br>kWh</span>`;
+      renderAppliances();
+    }catch(_){}
+  }
+
+  // Appliances
+  async function pollAppliances(){
+    try{
+      const res=await fetch('/api/appliances',{cache:'no-store'});
+      if(!res.ok)return;
+      const d=await res.json(); if(!d.length)return;
+      appData=d;
+      document.getElementById('bs').classList.add('on');
+      renderAppliances();
+    }catch(_){}
+  }
+
+  function renderAppliances(){
+    if(!appData.length)return;
+    const mx=Math.max(...appData.map(a=>a.daily_kwh));
+    document.getElementById('app-list').innerHTML='<div class="app-list">'+
+      appData.map(a=>{
+        const pct=Math.round(a.daily_kwh/mx*100);
+        const cost=curPrice?`$${(a.daily_kwh*curPrice).toFixed(3)}/d`:'—';
+        return`<div class="app-row">
+          <div class="app-top"><span class="app-name">${a.name}</span><span class="app-cost">${cost}</span></div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+          <span class="app-kwh">${a.daily_kwh} kWh/day</span>
+        </div>`;
+      }).join('')+'</div>';
+  }
+
+  // Events
+  async function pollEvents(){
+    try{
+      const res=await fetch('/api/events',{cache:'no-store'});
+      if(!res.ok)return;
+      const data=await res.json(); if(!data.length)return;
+
+      document.getElementById('dot').classList.add('live');
+      document.getElementById('stxt').textContent='LIVE';
+      document.getElementById('bk').classList.add('on');
+
+      const tbody=document.getElementById('tbody');
+      let added=false, html='';
+
+      for(const e of data){
+        const k=`${e.circuit_id}-${e.timestamp}`;
+        if(seen.has(k))continue;
+        seen.add(k); total++; added=true;
+        evTs.push(Date.now());
+        buckets[bIdx()]++;
+        totKwh+=e.kwh;
+        if(e.kwh>peakKwh)peakKwh=e.kwh;
+        zoneCounts[e.room]=(zoneCounts[e.room]||0)+1;
+        typeCounts[e.type]=(typeCounts[e.type]||0)+1;
+        updateScope(e.kwh);
+        const cost=curPrice?e.kwh*curPrice:null;
+        if(cost)totCost+=cost;
+        const ts=new Date(e.timestamp).toLocaleTimeString();
+        html+=`<tr class="nr">
+          <td><span class="mid-id">${e.circuit_id}</span></td>
+          <td>${e.room}</td>
+          <td><span class="chip ${e.type}">${e.type}</span></td>
+          <td><span class="kval">${e.kwh}</span></td>
+          <td><span class="cval">${cost?`$${cost.toFixed(4)}`:'—'}</span></td>
+          <td><span class="equiv">≈ ${findEquiv(e.kwh)}</span></td>
+          <td class="tval">${ts}</td>
+        </tr>`;
+      }
+
+      if(added){
+        if(tbody.querySelector('.empty'))tbody.innerHTML='';
+        tbody.innerHTML=html+tbody.innerHTML;
+        document.getElementById('cnt').textContent=total; bump('cnt');
+        document.getElementById('tkwh').textContent=totKwh.toFixed(1);
+        document.getElementById('pkwh').textContent=peakKwh.toFixed(2);
+        document.getElementById('ecost').textContent=totCost>0?`$${totCost.toFixed(2)}`:'—';
+        document.getElementById('tcount').textContent=`${total} readings`;
+        updateGauge(totKwh/total);
+        renderZones();
+        renderTypeGauges();
+      }
+
+      const cutoff=Date.now()-60000;
+      while(evTs.length&&evTs[0]<cutoff)evTs.shift();
+      document.getElementById('rpm').textContent=evTs.length;
+    }catch(_){}
+  }
+
+  pollEvents(); pollPrice(); pollAppliances();
+  setInterval(pollEvents,2000);
+  setInterval(pollPrice,10000);
+  setInterval(pollAppliances,5000);
+  setInterval(()=>{ const c=Date.now()-60000; while(evTs.length&&evTs[0]<c)evTs.shift(); document.getElementById('rpm').textContent=evTs.length; },5000);
+</script>
+</body>
+</html>

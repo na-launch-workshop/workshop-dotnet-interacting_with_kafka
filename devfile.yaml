@@ -1,0 +1,87 @@
+schemaVersion: 2.3.0
+metadata:
+  name: workshop-dotnet-kafka
+  version: 1.0.0
+  description: Grid operations dashboard — wire up sidecars and watch the data flow
+attributes:
+  che-editor: vscode
+components:
+  - name: tools
+    container:
+      image: image-registry.openshift-image-registry.svc:5000/workspace-images/udi-rhel9:latest
+      endpoints:
+        - exposure: public
+          name: grid-dashboard
+          protocol: https
+          targetPort: 8080
+          path: /
+      env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: localhost:9092
+        - name: KAFKA_TOPIC
+          value: meter-readings
+        - name: KAFKA_GROUP_ID
+          value: grid-dashboard
+        - name: DOTNET_CLI_TELEMETRY_OPTOUT
+          value: "1"
+        - name: DOTNET_NOLOGO
+          value: "1"
+      volumeMounts:
+        - name: nuget
+          path: /home/user/.nuget
+      cpuLimit: '2'
+      cpuRequest: '500m'
+      memoryLimit: '4Gi'
+      memoryRequest: '2Gi'
+      mountSources: true
+
+  - name: nuget
+    volume:
+      size: 1G
+
+  # ---------------------------------------------------------------
+  # TODO — Task 1: Add the Kafka sidecar component below this line
+  # See the lab guide in docs/index.md for the YAML to paste in.
+  # ---------------------------------------------------------------
+
+  # ---------------------------------------------------------------
+  # TODO — Task 4: Add the datasette sidecar component below this line
+  # See the lab guide in docs/index.md for the YAML to paste in.
+  # ---------------------------------------------------------------
+
+  # ---------------------------------------------------------------
+  # TODO — Task 6: Add the electricity price sidecar below this line
+  # See the lab guide in docs/index.md for the YAML to paste in.
+  # ---------------------------------------------------------------
+
+commands:
+  - id: 1-install
+    exec:
+      label: "1. Install dependencies"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: "dotnet build HomeGrid.sln"
+      group:
+        kind: build
+        isDefault: true
+  - id: 2-start
+    exec:
+      label: "2. Start HomeGrid dashboard"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: "dotnet run --project src/HomeGrid --urls http://0.0.0.0:8080"
+      group:
+        kind: run
+        isDefault: true
+  - id: 3-create-topic
+    exec:
+      label: "3. Create meter-readings topic"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: "dotnet run --project src/HomeGrid.CreateTopic"
+  - id: 4-produce
+    exec:
+      label: "4. Start meter reading producer"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: "dotnet run --project src/HomeGrid.Producer"
