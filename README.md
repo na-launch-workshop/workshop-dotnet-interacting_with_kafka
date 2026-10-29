@@ -165,6 +165,8 @@ Add your own appliances using the SQLite Explorer extension (`zknpr.sqlite-explo
 - Add rows for any appliances you want to track
 - The Appliance Reference panel updates within 2 seconds
 
+**Bonus challenge:** Add 10 more appliances to the database. Get creative — think home automation, workshop tools, entertainment systems. Each appliance needs a name and daily kWh consumption. Watch the Appliance Reference panel update in real time as you add them!
+
 ---
 
 ### Task 6 — Add the electricity price sidecar
